@@ -3,6 +3,7 @@ extern crate quaternion;
 extern crate vecmath;
 
 use image::{Rgb, RgbImage};
+use vecmath::traits::Float;
 use vecmath::Vector3;
 
 use std::option::Option;
@@ -17,9 +18,9 @@ struct Plane<T> {
     d: T,
 }
 
-struct Poly {
-    pts: [Vector3<f64>; 3],
-    color: Rgb<u8>,
+struct Poly<T, C> {
+    pts: [Vector3<T>; 3],
+    color: C,
 }
 
 struct Camera<T> {
@@ -29,9 +30,9 @@ struct Camera<T> {
     aperture: T, // aperture angle in radians
 }
 
-struct Scene {
-    polys: Vec<Poly>,
-    background: Rgb<u8>,
+struct Scene<T, C> {
+    polys: Vec<Poly<T, C>>,
+    background: C,
 }
 
 const TRACE_DEPTH: u16 = 2;
@@ -65,33 +66,40 @@ fn main() {
     img.save("test.png").unwrap();
 }
 
-fn render(scene: &Scene, camera: &Camera<f64>, img: &mut RgbImage) {
-    let center = vecmath::vec2_scale([img.width() as f64, img.height() as f64], 0.5);
-    let pix_ang = camera.aperture / img.width() as f64;
+fn render<F: Float, I: image::GenericImage>(
+    scene: &Scene<F, I::Pixel>,
+    camera: &Camera<F>,
+    img: &mut I,
+) {
+    let (width, height) = img.dimensions();
+    let center = vecmath::vec2_scale([F::from_u32(width), F::from_u32(height)], F::from_f64(0.5));
+    let pix_ang = camera.aperture / F::from_u32(width);
 
     let xrot = camera.up;
     let yrot = vecmath::vec3_normalized(vecmath::vec3_cross(camera.dir, camera.up));
 
-    for (x, y, c) in img.enumerate_pixels_mut() {
-        let pos = [x as f64, y as f64];
-        let angles = vecmath::vec2_scale(vecmath::vec2_sub(pos, center), pix_ang);
+    for x in 0..width {
+        for y in 0..height {
+            let pos = [F::from_u32(x), F::from_u32(y)];
+            let angles = vecmath::vec2_scale(vecmath::vec2_sub(pos, center), pix_ang);
 
-        let q = quaternion::mul(
-            quaternion::axis_angle(xrot, -angles[0]),
-            quaternion::axis_angle(yrot, -angles[1]),
-        );
+            let q = quaternion::mul(
+                quaternion::axis_angle(xrot, -angles[0]),
+                quaternion::axis_angle(yrot, -angles[1]),
+            );
 
-        let r = Ray {
-            orig: camera.orig,
-            dir: quaternion::rotate_vector(q, camera.dir),
-        };
+            let r = Ray {
+                orig: camera.orig,
+                dir: quaternion::rotate_vector(q, camera.dir),
+            };
 
-        *c = trace(scene, &r, TRACE_DEPTH);
+            img.put_pixel(x, y, trace(scene, &r, TRACE_DEPTH));
+        }
     }
 }
 
-fn trace(scene: &Scene, ray: &Ray<f64>, _depth: u16) -> Rgb<u8> {
-    let mut closest: Option<(f64, &Poly)> = None;
+fn trace<F: Float, C: Copy>(scene: &Scene<F, C>, ray: &Ray<F>, _depth: u16) -> C {
+    let mut closest: Option<(F, &Poly<F, C>)> = None;
 
     for p in &scene.polys {
         if let Some(d) = dist(ray, &p) {
@@ -104,7 +112,7 @@ fn trace(scene: &Scene, ray: &Ray<f64>, _depth: u16) -> Rgb<u8> {
     return closest.map_or(scene.background, |c| c.1.color);
 }
 
-fn dist(ray: &Ray<f64>, poly: &Poly) -> Option<f64> {
+fn dist<F: Float, C>(ray: &Ray<F>, poly: &Poly<F, C>) -> Option<F> {
     let pl = plane(poly);
 
     // Distance of origin to plane.
@@ -124,7 +132,7 @@ fn dist(ray: &Ray<f64>, poly: &Poly) -> Option<f64> {
         let pside = vecmath::vec3_sub(p, r);
         let iside = vecmath::vec3_sub(poly.pts[i], r);
 
-        if vecmath::vec3_dot(ni, pside) / vecmath::vec3_dot(ni, iside) < 0.0 {
+        if vecmath::vec3_dot(ni, pside) / vecmath::vec3_dot(ni, iside) < F::zero() {
             return None;
         }
     }
@@ -132,10 +140,10 @@ fn dist(ray: &Ray<f64>, poly: &Poly) -> Option<f64> {
     return Some(d);
 }
 
-fn intersect(ray: &Ray<f64>, plane: &Plane<f64>) -> Option<f64> {
+fn intersect<F: Float>(ray: &Ray<F>, plane: &Plane<F>) -> Option<F> {
     let dot = vecmath::vec3_dot(plane.n, ray.dir);
 
-    if dot == 0.0 {
+    if dot == F::zero() {
         // Ray is parallel to plane.
         return None;
     }
@@ -143,7 +151,7 @@ fn intersect(ray: &Ray<f64>, plane: &Plane<f64>) -> Option<f64> {
     // Distance of ray to hit point of the plane.
     let d = (vecmath::vec3_dot(plane.n, ray.orig) + plane.d) / dot;
 
-    if d <= 0.0 {
+    if d <= F::zero() {
         // Plane is behind the ray.
         return None;
     }
@@ -151,7 +159,7 @@ fn intersect(ray: &Ray<f64>, plane: &Plane<f64>) -> Option<f64> {
     return Some(d);
 }
 
-fn plane(poly: &Poly) -> Plane<f64> {
+fn plane<T: Float, C>(poly: &Poly<T, C>) -> Plane<T> {
     // Surface normal.
     let n = vecmath::vec3_normalized(vecmath::vec3_cross(
         vecmath::vec3_sub(poly.pts[1], poly.pts[0]),
