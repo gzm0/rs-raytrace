@@ -29,40 +29,43 @@ struct Camera<T> {
     aperture: T, // aperture angle in radians
 }
 
-const CAMERA: Camera<f64> = Camera {
-    orig: [0.0, 0.0, 0.0],
-    dir: [0.0, 0.0, -1.0],
-    up: [0.0, 1.0, 0.0],
-    aperture: 30.0 / 180.0 * std::f64::consts::PI, // deg
-};
-
-const VIEW_WIDTH: u32 = 500; // pixel
-const VIEW_HEIGHT: u32 = 300; // pixel
+struct Scene {
+    polys: Vec<Poly>,
+    background: Rgb<u8>,
+}
 
 const TRACE_DEPTH: u16 = 2;
 
-const THE_SCENE: [Poly; 2] = [
-    Poly {
-        pts: [[1.0, 1.0, -10.0], [0.0, 0.0, -10.0], [-1.0, 1.0, -10.0]],
-        color: Rgb([255, 0, 0]),
-    },
-    Poly {
-        pts: [[1.0, 1.0, -12.0], [0.0, 3.0, -8.0], [-3.0, -3.0, -8.0]],
-        color: Rgb([0, 0, 255]),
-    },
-];
-
-const BACKGROUND: Rgb<u8> = Rgb([0, 0, 0]);
-
 fn main() {
-    let mut img = RgbImage::new(VIEW_WIDTH, VIEW_HEIGHT);
+    let mut img = RgbImage::new(500, 300);
 
-    render(&THE_SCENE, &CAMERA, &mut img);
+    let cam = Camera {
+        orig: [0.0, 0.0, 0.0],
+        dir: [0.0, 0.0, -1.0],
+        up: [0.0, 1.0, 0.0],
+        aperture: 30.0 / 180.0 * std::f64::consts::PI, // deg
+    };
+
+    let scene = Scene {
+        polys: vec![
+            Poly {
+                pts: [[1.0, 1.0, -10.0], [0.0, 0.0, -10.0], [-1.0, 1.0, -10.0]],
+                color: Rgb([255, 0, 0]),
+            },
+            Poly {
+                pts: [[1.0, 1.0, -12.0], [0.0, 3.0, -8.0], [-3.0, -3.0, -8.0]],
+                color: Rgb([0, 0, 255]),
+            },
+        ],
+        background: Rgb([0, 0, 0]),
+    };
+
+    render(&scene, &cam, &mut img);
 
     img.save("test.png").unwrap();
 }
 
-fn render(scene: &[Poly], camera: &Camera<f64>, img: &mut RgbImage) {
+fn render(scene: &Scene, camera: &Camera<f64>, img: &mut RgbImage) {
     let center = vecmath::vec2_scale([img.width() as f64, img.height() as f64], 0.5);
     let pix_ang = camera.aperture / img.width() as f64;
 
@@ -87,18 +90,18 @@ fn render(scene: &[Poly], camera: &Camera<f64>, img: &mut RgbImage) {
     }
 }
 
-fn trace(scene: &[Poly], ray: &Ray<f64>, _depth: u16) -> Rgb<u8> {
+fn trace(scene: &Scene, ray: &Ray<f64>, _depth: u16) -> Rgb<u8> {
     let mut closest: Option<(f64, &Poly)> = None;
 
-    for p in scene {
-        if let Some(d) = dist(ray, p) {
+    for p in &scene.polys {
+        if let Some(d) = dist(ray, &p) {
             if closest.map_or(true, |c| c.0 > d) {
-                closest = Some((d, p));
+                closest = Some((d, &p));
             }
         }
     }
 
-    return closest.map_or(BACKGROUND, |c| c.1.color);
+    return closest.map_or(scene.background, |c| c.1.color);
 }
 
 fn dist(ray: &Ray<f64>, poly: &Poly) -> Option<f64> {
