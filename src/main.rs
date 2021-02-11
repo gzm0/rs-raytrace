@@ -157,7 +157,7 @@ impl<T: Float> Tracer<T> {
                 continue;
             }
 
-            if vecmath::vec3_dot(ray.dir, poly.plane.n) / v < T::zero() {
+            if vecmath::vec3_dot(ray.dir, poly.plane.n) / v > T::zero() {
                 // Rays are not on the same side of the surfce.
                 continue;
             }
@@ -176,9 +176,11 @@ impl<T: Float> Tracer<T> {
                 }
             };
 
-            let light = self.trace(scene, &r, depth + 1).map(|c| c * lambert);
+            let light = self
+                .trace(scene, &r, depth + 1)
+                .map2(&poly.color, |x, y| x * y);
 
-            all_light = all_light.map2(&light, |x, y| x + y);
+            all_light = all_light.map2(&light, |x, y| x + y * lambert);
         }
 
         return all_light;
@@ -192,19 +194,32 @@ fn main() {
         polys: vec![
             Poly::new(
                 [[2.0, 1.0, -8.0], [0.0, 0.0, -10.0], [-1.0, 1.0, -9.0]],
-                Rgb([1.0, 0.0, 0.0]),
+                Rgb([1.0, 0.1, 0.1]),
             ),
             Poly::new(
                 [[1.0, 1.0, -12.0], [0.0, 3.0, -8.0], [-3.0, -3.0, -8.0]],
-                Rgb([0.0, 0.0, 1.0]),
+                Rgb([0.1, 0.1, 1.0]),
             ),
             Poly::new(
                 [[2.0, 0.0, -8.0], [2.0, 0.0, -15.0], [1.5, -3.0, -15.0]],
-                Rgb([0.0, 1.0, 0.0]),
+                Rgb([0.1, 1.0, 0.1]),
             ),
             Poly::new(
                 [[-2.0, -1.0, -2.0], [-1.0, 2.0, -12.0], [1.5, -2.0, -5.0]],
-                Rgb([1.0, 1.0, 0.0]),
+                Rgb([1.0, 1.0, 0.1]),
+            ),
+            // Floor.
+            Poly::new(
+                [
+                    [-50.0, -5.0, 50.0],
+                    [-50.0, -5.0, -50.0],
+                    [50.0, -5.0, -50.0],
+                ],
+                Rgb([1.0, 1.0, 1.0]),
+            ),
+            Poly::new(
+                [[50.0, -5.0, -50.0], [50.0, -5.0, 50.0], [-50.0, -5.0, 50.0]],
+                Rgb([1.0, 1.0, 1.0]),
             ),
         ],
         dark: Rgb([0.0, 0.0, 0.0]),
@@ -243,7 +258,12 @@ fn main() {
     let tracer = Tracer::<f64>::new(5, 2);
 
     let gamma = |c: Rgb<f64>| -> Rgb<u8> {
-        *Rgb::from_slice(&c.channels().iter().map(|x| *x as u8).collect::<Vec<u8>>())
+        *Rgb::from_slice(
+            &c.channels()
+                .iter()
+                .map(|x| (*x * 0.5) as u8)
+                .collect::<Vec<u8>>(),
+        )
     };
 
     render(
