@@ -45,6 +45,40 @@ impl<T: Float, C> Poly<T, C> {
             color,
         };
     }
+
+    fn hit(&self, ray: &Ray<T>) -> Option<T> {
+        let n = self.plane.n;
+
+        let dot = vecmath::vec3_dot(n, ray.dir);
+
+        if dot == T::zero() {
+            // Ray is parallel to plane.
+            return None;
+        }
+
+        // Distance of ray to hit point of the plane.
+        let d = (-vecmath::vec3_dot(n, ray.orig) + self.plane.d) / dot;
+
+        if d <= T::zero() {
+            // Plane is behind the ray.
+            return None;
+        }
+
+        // Hit point on the plane.
+        let p = vecmath::vec3_add(ray.orig, vecmath::vec3_scale(ray.dir, d));
+
+        for i in 0..3 {
+            let edge = vecmath::vec3_sub(self.points[(i + 1) % 3], self.points[i]);
+            let c = vecmath::vec3_sub(p, self.points[i]);
+
+            if vecmath::vec3_dot(n, vecmath::vec3_cross(edge, c)) < T::zero() {
+                // Point is on wrong side of edge.
+                return None;
+            }
+        }
+
+        return Some(d);
+    }
 }
 
 struct Camera<T> {
@@ -162,7 +196,7 @@ fn trace<F: Float, C: Copy>(scene: &Scene<F, C>, ray: &Ray<F>, _depth: u16) -> C
     let mut closest: Option<(F, &Poly<F, C>)> = None;
 
     for p in &scene.polys {
-        if let Some(d) = hit(ray, &p) {
+        if let Some(d) = p.hit(ray) {
             if closest.map_or(true, |c| c.0 > d) {
                 closest = Some((d, &p));
             }
@@ -170,38 +204,4 @@ fn trace<F: Float, C: Copy>(scene: &Scene<F, C>, ray: &Ray<F>, _depth: u16) -> C
     }
 
     return closest.map_or(scene.background, |c| c.1.color);
-}
-
-fn hit<F: Float, C>(ray: &Ray<F>, poly: &Poly<F, C>) -> Option<F> {
-    let n = poly.plane.n;
-
-    let dot = vecmath::vec3_dot(n, ray.dir);
-
-    if dot == F::zero() {
-        // Ray is parallel to plane.
-        return None;
-    }
-
-    // Distance of ray to hit point of the plane.
-    let d = (-vecmath::vec3_dot(n, ray.orig) + poly.plane.d) / dot;
-
-    if d <= F::zero() {
-        // Plane is behind the ray.
-        return None;
-    }
-
-    // Hit point on the plane.
-    let p = vecmath::vec3_add(ray.orig, vecmath::vec3_scale(ray.dir, d));
-
-    for i in 0..3 {
-        let edge = vecmath::vec3_sub(poly.points[(i + 1) % 3], poly.points[i]);
-        let c = vecmath::vec3_sub(p, poly.points[i]);
-
-        if vecmath::vec3_dot(n, vecmath::vec3_cross(edge, c)) < F::zero() {
-            // Point is on wrong side of edge.
-            return None;
-        }
-    }
-
-    return Some(d);
 }
