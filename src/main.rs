@@ -193,6 +193,10 @@ fn render<F: Float, I: GenericImage>(scene: &Scene<F, I::Pixel>, camera: &Camera
 }
 
 fn trace<F: Float, C: Copy>(scene: &Scene<F, C>, ray: &Ray<F>, _depth: u16) -> C {
+    return shoot(scene, ray).map_or(scene.background, |p| p.color);
+}
+
+fn shoot<'a, F: Float, C: Copy>(scene: &'a Scene<F, C>, ray: &Ray<F>) -> Option<&'a Poly<F, C>> {
     let mut closest: Option<(F, &Poly<F, C>)> = None;
 
     for p in &scene.polys {
@@ -203,5 +207,5 @@ fn trace<F: Float, C: Copy>(scene: &Scene<F, C>, ray: &Ray<F>, _depth: u16) -> C
         }
     }
 
-    return closest.map_or(scene.background, |c| c.1.color);
+    return closest.map(|p| p.1);
 }
