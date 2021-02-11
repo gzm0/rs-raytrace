@@ -13,14 +13,38 @@ struct Ray<T> {
     dir: Vector3<T>,
 }
 
+struct Poly<T, C> {
+    points: [Vector3<T>; 3],
+    plane: Plane<T>,
+    color: C,
+}
+
 struct Plane<T> {
     n: Vector3<T>,
     d: T,
 }
 
-struct Poly<T, C> {
-    pts: [Vector3<T>; 3],
-    color: C,
+impl<T: Float, C> Poly<T, C> {
+    fn new(points: [Vector3<T>; 3], color: C) -> Poly<T, C> {
+        let plane = {
+            // Surface normal.
+            let n = vecmath::vec3_normalized(vecmath::vec3_cross(
+                vecmath::vec3_sub(points[1], points[0]),
+                vecmath::vec3_sub(points[0], points[2]),
+            ));
+
+            // Surface to origin distance.
+            let d = vecmath::vec3_dot(n, points[0]);
+
+            Plane { n, d }
+        };
+
+        return Poly {
+            points,
+            plane,
+            color,
+        };
+    }
 }
 
 struct Camera<T> {
@@ -42,22 +66,22 @@ fn main() {
 
     let scene = Scene {
         polys: vec![
-            Poly {
-                pts: [[2.0, 1.0, -8.0], [0.0, 0.0, -10.0], [-1.0, 1.0, -9.0]],
-                color: Rgb([255, 0, 0]),
-            },
-            Poly {
-                pts: [[1.0, 1.0, -12.0], [0.0, 3.0, -8.0], [-3.0, -3.0, -8.0]],
-                color: Rgb([0, 0, 255]),
-            },
-            Poly {
-                pts: [[2.0, 0.0, -8.0], [2.0, 0.0, -15.0], [1.5, -3.0, -15.0]],
-                color: Rgb([0, 255, 0]),
-            },
-            Poly {
-                pts: [[-2.0, -1.0, -2.0], [-1.0, 2.0, -12.0], [1.5, -2.0, -5.0]],
-                color: Rgb([255, 255, 0]),
-            },
+            Poly::new(
+                [[2.0, 1.0, -8.0], [0.0, 0.0, -10.0], [-1.0, 1.0, -9.0]],
+                Rgb([255, 0, 0]),
+            ),
+            Poly::new(
+                [[1.0, 1.0, -12.0], [0.0, 3.0, -8.0], [-3.0, -3.0, -8.0]],
+                Rgb([0, 0, 255]),
+            ),
+            Poly::new(
+                [[2.0, 0.0, -8.0], [2.0, 0.0, -15.0], [1.5, -3.0, -15.0]],
+                Rgb([0, 255, 0]),
+            ),
+            Poly::new(
+                [[-2.0, -1.0, -2.0], [-1.0, 2.0, -12.0], [1.5, -2.0, -5.0]],
+                Rgb([255, 255, 0]),
+            ),
         ],
         background: Rgb([0, 0, 0]),
     };
@@ -138,7 +162,7 @@ fn trace<F: Float, C: Copy>(scene: &Scene<F, C>, ray: &Ray<F>, _depth: u16) -> C
     let mut closest: Option<(F, &Poly<F, C>)> = None;
 
     for p in &scene.polys {
-        if let Some(d) = dist(ray, &p) {
+        if let Some(d) = hit(ray, &p) {
             if closest.map_or(true, |c| c.0 > d) {
                 closest = Some((d, &p));
             }
@@ -148,36 +172,10 @@ fn trace<F: Float, C: Copy>(scene: &Scene<F, C>, ray: &Ray<F>, _depth: u16) -> C
     return closest.map_or(scene.background, |c| c.1.color);
 }
 
-fn dist<F: Float, C>(ray: &Ray<F>, poly: &Poly<F, C>) -> Option<F> {
-    let pl = plane(poly);
+fn hit<F: Float, C>(ray: &Ray<F>, poly: &Poly<F, C>) -> Option<F> {
+    let n = poly.plane.n;
 
-    // Distance of origin to plane.
-    let d = match intersect(ray, &pl) {
-        None => return None,
-        Some(d) => d,
-    };
-
-    // Hit point on the plane.
-    let p = vecmath::vec3_add(ray.orig, vecmath::vec3_scale(ray.dir, d));
-
-    for i in 0..3 {
-        let opposite = vecmath::vec3_sub(poly.pts[(i + 1) % 3], poly.pts[(i + 2) % 3]);
-        let ni = vecmath::vec3_cross(opposite, pl.n);
-
-        let r = poly.pts[(i + 1) % 3];
-        let pside = vecmath::vec3_sub(p, r);
-        let iside = vecmath::vec3_sub(poly.pts[i], r);
-
-        if vecmath::vec3_dot(ni, pside) / vecmath::vec3_dot(ni, iside) < F::zero() {
-            return None;
-        }
-    }
-
-    return Some(d);
-}
-
-fn intersect<F: Float>(ray: &Ray<F>, plane: &Plane<F>) -> Option<F> {
-    let dot = vecmath::vec3_dot(plane.n, ray.dir);
+    let dot = vecmath::vec3_dot(n, ray.dir);
 
     if dot == F::zero() {
         // Ray is parallel to plane.
@@ -185,25 +183,28 @@ fn intersect<F: Float>(ray: &Ray<F>, plane: &Plane<F>) -> Option<F> {
     }
 
     // Distance of ray to hit point of the plane.
-    let d = (-vecmath::vec3_dot(plane.n, ray.orig) + plane.d) / dot;
+    let d = (-vecmath::vec3_dot(n, ray.orig) + poly.plane.d) / dot;
 
     if d <= F::zero() {
         // Plane is behind the ray.
         return None;
     }
 
+    // Hit point on the plane.
+    let p = vecmath::vec3_add(ray.orig, vecmath::vec3_scale(ray.dir, d));
+
+    for i in 0..3 {
+        let opposite = vecmath::vec3_sub(poly.points[(i + 1) % 3], poly.points[(i + 2) % 3]);
+        let ni = vecmath::vec3_cross(opposite, n);
+
+        let r = poly.points[(i + 1) % 3];
+        let pside = vecmath::vec3_sub(p, r);
+        let iside = vecmath::vec3_sub(poly.points[i], r);
+
+        if vecmath::vec3_dot(ni, pside) / vecmath::vec3_dot(ni, iside) < F::zero() {
+            return None;
+        }
+    }
+
     return Some(d);
-}
-
-fn plane<T: Float, C>(poly: &Poly<T, C>) -> Plane<T> {
-    // Surface normal.
-    let n = vecmath::vec3_normalized(vecmath::vec3_cross(
-        vecmath::vec3_sub(poly.pts[1], poly.pts[0]),
-        vecmath::vec3_sub(poly.pts[0], poly.pts[2]),
-    ));
-
-    // Surface to origin distance.
-    let d = vecmath::vec3_dot(n, poly.pts[0]);
-
-    return Plane { n: n, d: d };
 }
