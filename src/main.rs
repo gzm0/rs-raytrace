@@ -255,13 +255,13 @@ fn main() {
         aperture: 30.0 / 180.0 * std::f64::consts::PI, // deg
     };
 
-    let tracer = Tracer::<f64>::new(5, 2);
+    let tracer = Tracer::<f64>::new(6, 3);
 
     let gamma = |c: Rgb<f64>| -> Rgb<u8> {
         *Rgb::from_slice(
             &c.channels()
                 .iter()
-                .map(|x| (*x * 0.5) as u8)
+                .map(|x| (*x * 0.3) as u8)
                 .collect::<Vec<u8>>(),
         )
     };
