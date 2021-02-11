@@ -1,5 +1,6 @@
 extern crate image;
 extern crate quaternion;
+extern crate same;
 extern crate vecmath;
 
 use image::{GenericImage, Pixel, Rgb, RgbImage};
@@ -8,6 +9,8 @@ use vecmath::Vector3;
 
 use std::convert::TryInto;
 use std::option::Option;
+
+use same::Same;
 
 struct Ray<T> {
     orig: Vector3<T>,
@@ -131,12 +134,18 @@ impl<T: Float> Tracer<T> {
         };
     }
 
-    fn trace<C: Pixel<Subpixel = T>>(&self, scene: &Scene<T, C>, ray: &Ray<T>, depth: u32) -> C {
+    fn trace<C: Pixel<Subpixel = T>>(
+        &self,
+        scene: &Scene<T, C>,
+        ray: &Ray<T>,
+        exclude: Option<&Poly<T, C>>,
+        depth: u32,
+    ) -> C {
         if depth > self.max_depth {
             return scene.dark;
         }
 
-        let (hit, poly) = match shoot(scene, ray) {
+        let (hit, poly) = match shoot(scene, ray, exclude) {
             None => {
                 return if vecmath::vec3_dot(ray.dir, scene.light) > T::from_f64(0.4) {
                     scene.bright
@@ -163,8 +172,7 @@ impl<T: Float> Tracer<T> {
             }
 
             let r = Ray {
-                // HACK: Move away to not hit same poly.
-                orig: vecmath::vec3_add(hit.point, vecmath::vec3_scale(*dir, T::from_f64(0.01))),
+                orig: hit.point,
                 dir: *dir,
             };
 
@@ -177,7 +185,7 @@ impl<T: Float> Tracer<T> {
             };
 
             let light = self
-                .trace(scene, &r, depth + 1)
+                .trace(scene, &r, Some(poly), depth + 1)
                 .map2(&poly.color, |x, y| x * y);
 
             all_light = all_light.map2(&light, |x, y| x + y * lambert);
@@ -335,7 +343,7 @@ fn render<F: Float, C: Pixel<Subpixel = F>, I: GenericImage, G: Fn(C) -> I::Pixe
                 dir: quaternion::rotate_vector(q, camera.dir),
             };
 
-            let light = tracer.trace(scene, &r, 0);
+            let light = tracer.trace(scene, &r, None, 0);
 
             img.put_pixel(x, y, gamma(light));
         }
@@ -345,10 +353,15 @@ fn render<F: Float, C: Pixel<Subpixel = F>, I: GenericImage, G: Fn(C) -> I::Pixe
 fn shoot<'a, F: Float, C: Copy>(
     scene: &'a Scene<F, C>,
     ray: &Ray<F>,
+    exclude: Option<&Poly<F, C>>,
 ) -> Option<(Hit<F>, &'a Poly<F, C>)> {
     let mut closest: Option<(Hit<F>, &Poly<F, C>)> = None;
 
     for p in &scene.polys {
+        if exclude.map_or(false, |x| x.same(&p)) {
+            continue;
+        }
+
         if let Some(h) = p.hit(ray) {
             if closest.as_ref().map_or(true, |c| c.0.dist > h.dist) {
                 closest = Some((h, &p));
