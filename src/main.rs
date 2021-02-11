@@ -2,7 +2,7 @@ extern crate image;
 extern crate quaternion;
 extern crate vecmath;
 
-use image::{Rgb, RgbImage};
+use image::{GenericImage, Rgb, RgbImage};
 use vecmath::traits::Float;
 use vecmath::Vector3;
 
@@ -38,14 +38,7 @@ struct Scene<T, C> {
 const TRACE_DEPTH: u16 = 2;
 
 fn main() {
-    let mut img = RgbImage::new(500, 300);
-
-    let cam = Camera {
-        orig: [0.0, 0.0, 0.0],
-        dir: [0.0, 0.0, -1.0],
-        up: [0.0, 1.0, 0.0],
-        aperture: 30.0 / 180.0 * std::f64::consts::PI, // deg
-    };
+    let mut img = RgbImage::new(1001, 601);
 
     let scene = Scene {
         polys: vec![
@@ -65,16 +58,51 @@ fn main() {
         background: Rgb([0, 0, 0]),
     };
 
-    render(&scene, &cam, &mut img);
+    let front = Camera {
+        orig: [0.0, 0.0, 10.0],
+        dir: [0.0, 0.0, -1.0],
+        up: [0.0, 1.0, 0.0],
+        aperture: 30.0 / 180.0 * std::f64::consts::PI, // deg
+    };
+
+    let back = Camera {
+        orig: [0.0, 0.0, -25.0],
+        dir: [0.0, 0.0, 1.0],
+        up: [0.0, 1.0, 0.0],
+        aperture: 30.0 / 180.0 * std::f64::consts::PI, // deg
+    };
+
+    let right = Camera {
+        orig: [20.0, 0.0, -10.0],
+        dir: [-1.0, 0.0, 0.0],
+        up: [0.0, 1.0, 0.0],
+        aperture: 30.0 / 180.0 * std::f64::consts::PI, // deg
+    };
+
+    let left = Camera {
+        orig: [-20.0, 0.0, -10.0],
+        dir: [1.0, 0.0, 0.0],
+        up: [0.0, 1.0, 0.0],
+        aperture: 30.0 / 180.0 * std::f64::consts::PI, // deg
+    };
+
+    render(&scene, &front, &mut img.sub_image(0, 0, 500, 300));
+    render(&scene, &back, &mut img.sub_image(0, 301, 500, 300));
+    render(&scene, &right, &mut img.sub_image(501, 0, 500, 300));
+    render(&scene, &left, &mut img.sub_image(501, 301, 500, 300));
+
+    for i in 0..1001 {
+        img.put_pixel(i, 300, Rgb([255, 255, 255]));
+    }
+
+    for i in 0..601 {
+        img.put_pixel(500, i, Rgb([255, 255, 255]));
+    }
 
     img.save("test.png").unwrap();
 }
 
-fn render<F: Float, I: image::GenericImage>(
-    scene: &Scene<F, I::Pixel>,
-    camera: &Camera<F>,
-    img: &mut I,
-) {
+fn render<F: Float, I: GenericImage>(scene: &Scene<F, I::Pixel>, camera: &Camera<F>, img: &mut I) {
     let (width, height) = img.dimensions();
     let center = vecmath::vec2_scale([F::from_u32(width), F::from_u32(height)], F::from_f64(0.5));
     let pix_ang = camera.aperture / F::from_u32(width);
