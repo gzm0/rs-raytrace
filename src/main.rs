@@ -30,7 +30,7 @@ impl<T: Float, C> Poly<T, C> {
             // Surface normal.
             let n = vecmath::vec3_normalized(vecmath::vec3_cross(
                 vecmath::vec3_sub(points[1], points[0]),
-                vecmath::vec3_sub(points[0], points[2]),
+                vecmath::vec3_sub(points[2], points[0]),
             ));
 
             // Surface to origin distance.
@@ -194,14 +194,11 @@ fn hit<F: Float, C>(ray: &Ray<F>, poly: &Poly<F, C>) -> Option<F> {
     let p = vecmath::vec3_add(ray.orig, vecmath::vec3_scale(ray.dir, d));
 
     for i in 0..3 {
-        let opposite = vecmath::vec3_sub(poly.points[(i + 1) % 3], poly.points[(i + 2) % 3]);
-        let ni = vecmath::vec3_cross(opposite, n);
+        let edge = vecmath::vec3_sub(poly.points[(i + 1) % 3], poly.points[i]);
+        let c = vecmath::vec3_sub(p, poly.points[i]);
 
-        let r = poly.points[(i + 1) % 3];
-        let pside = vecmath::vec3_sub(p, r);
-        let iside = vecmath::vec3_sub(poly.points[i], r);
-
-        if vecmath::vec3_dot(ni, pside) / vecmath::vec3_dot(ni, iside) < F::zero() {
+        if vecmath::vec3_dot(n, vecmath::vec3_cross(edge, c)) < F::zero() {
+            // Point is on wrong side of edge.
             return None;
         }
     }
