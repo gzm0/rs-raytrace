@@ -153,7 +153,7 @@ fn intersect<F: Float>(ray: &Ray<F>, plane: &Plane<F>) -> Option<F> {
     }
 
     // Distance of ray to hit point of the plane.
-    let d = (vecmath::vec3_dot(plane.n, ray.orig) + plane.d) / dot;
+    let d = (-vecmath::vec3_dot(plane.n, ray.orig) + plane.d) / dot;
 
     if d <= F::zero() {
         // Plane is behind the ray.
