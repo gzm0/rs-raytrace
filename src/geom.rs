@@ -1,4 +1,3 @@
-extern crate same;
 extern crate vecmath;
 
 use vecmath::traits::Float;
