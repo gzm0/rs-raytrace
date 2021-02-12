@@ -12,9 +12,20 @@ use vecmath::Vector3;
 
 use std::convert::TryInto;
 use std::option::Option;
+use std::sync::Arc;
 
 use geom::{Poly, Ray};
 use same::Same;
+
+trait Black {
+    fn black() -> Self;
+}
+
+impl<T: image::Primitive> Black for Rgb<T> {
+    fn black() -> Rgb<T> {
+        return Rgb([T::zero(), T::zero(), T::zero()]);
+    }
+}
 
 struct Camera<T> {
     orig: Vector3<T>,
@@ -23,11 +34,72 @@ struct Camera<T> {
     aperture: T, // aperture angle in radians
 }
 
-struct Scene<T, C> {
-    polys: Vec<Poly<T, C>>,
-    dark: C,
-    bright: C,
-    light: Vector3<T>,
+trait Surface<T, P> {
+    fn emitted(&self) -> P;
+    fn reflected(&self, n: Vector3<T>, i: Vector3<T>, o: Vector3<T>) -> P;
+}
+
+impl<T, P> Surface<T, P> for Arc<dyn Surface<T, P>> {
+    fn emitted(&self) -> P {
+        return (**self).emitted();
+    }
+    fn reflected(&self, n: Vector3<T>, i: Vector3<T>, o: Vector3<T>) -> P {
+        return (**self).reflected(n, i, o);
+    }
+}
+
+struct Matt<P> {
+    color: P,
+}
+
+impl<'a, P: 'a + Copy + Black> Matt<P> {
+    fn new<T: Float>(color: P) -> Arc<dyn 'a + Surface<T, P>> {
+        Arc::new(Matt { color })
+    }
+}
+
+impl<T: Float, P: Copy + Black> Surface<T, P> for Matt<P> {
+    fn emitted(&self) -> P {
+        return P::black();
+    }
+    fn reflected(&self, n: Vector3<T>, i: Vector3<T>, o: Vector3<T>) -> P {
+        let v = vecmath::vec3_dot(i, n);
+
+        if v == T::zero() {
+            // Perpendicular to surface.
+            return P::black();
+        }
+
+        if vecmath::vec3_dot(o, n) / v > T::zero() {
+            // Rays are not on the same side of the surfce.
+            return P::black();
+        }
+
+        return self.color;
+    }
+}
+
+struct Light<P> {
+    color: P,
+}
+
+impl<'a, P: 'a + Copy + Black> Light<P> {
+    fn new<T: Float>(color: P) -> Arc<dyn 'a + Surface<T, P>> {
+        Arc::new(Light { color })
+    }
+}
+
+impl<T: Float, P: Copy + Black> Surface<T, P> for Light<P> {
+    fn emitted(&self) -> P {
+        return self.color;
+    }
+    fn reflected(&self, _n: Vector3<T>, _i: Vector3<T>, _o: Vector3<T>) -> P {
+        return P::black();
+    }
+}
+
+struct Scene<T, S> {
+    polys: Vec<Poly<T, S>>,
 }
 
 struct Tracer<T> {
@@ -60,49 +132,40 @@ impl<T: Float> Tracer<T> {
         };
     }
 
-    fn trace<C: Pixel<Subpixel = T>>(
+    fn trace<C: Pixel<Subpixel = T> + Black + PartialEq, S: Surface<T, C>>(
         &self,
-        scene: &Scene<T, C>,
+        scene: &Scene<T, S>,
         ray: &Ray<T>,
-        exclude: Option<&Poly<T, C>>,
+        exclude: Option<&Poly<T, S>>,
         depth: u32,
     ) -> C {
         if depth > self.max_depth {
-            return scene.dark;
+            return C::black();
         }
 
-        let polys: Box<dyn Iterator<Item = &Poly<T, C>>> = match exclude {
-            Some(that_poly) => Box::new(scene.polys.iter().filter(move |x| !that_poly.same(x))),
-            None => Box::new(scene.polys.iter()),
+        let maybe_hit = match exclude {
+            Some(that_poly) => {
+                let filtered = scene.polys.iter().filter(|x| !that_poly.same(x));
+                geom::shoot(filtered, ray)
+            }
+            None => geom::shoot(scene.polys.iter(), ray),
         };
 
-        let (hit_point, poly) = match geom::shoot(polys, ray) {
-            None => {
-                return if vecmath::vec3_dot(ray.dir, scene.light)
-                    > T::from_f64(30.0).deg_to_rad().cos()
-                {
-                    scene.bright
-                } else {
-                    scene.dark
-                };
-            }
+        let (hit_point, poly) = match maybe_hit {
+            None => return C::black(),
             Some(hit) => hit,
         };
 
-        let mut all_light = scene.dark;
+        let mut all_light = poly.surface.emitted();
 
         for dir in self.all_dirs.iter() {
+            let refl = poly.surface.reflected(*poly.n(), *dir, ray.dir);
+
+            if refl == C::black() {
+                continue;
+            }
+
             let v = vecmath::vec3_dot(*dir, *poly.n());
-
-            if v == T::zero() {
-                // Perpendicular to surface.
-                continue;
-            }
-
-            if vecmath::vec3_dot(ray.dir, *poly.n()) / v > T::zero() {
-                // Rays are not on the same side of the surfce.
-                continue;
-            }
 
             let r = Ray {
                 orig: hit_point,
@@ -119,7 +182,7 @@ impl<T: Float> Tracer<T> {
 
             let light = self
                 .trace(scene, &r, Some(poly), depth + 1)
-                .map2(&poly.surface, |x, y| x * y);
+                .map2(&refl, |x, y| x * y);
 
             all_light = all_light.map2(&light, |x, y| x + y * lambert);
         }
@@ -131,23 +194,23 @@ impl<T: Float> Tracer<T> {
 fn main() {
     let mut img = RgbImage::new(1001, 601);
 
-    let mut polys = Vec::new();
+    let mut polys = Vec::<Poly<f64, Arc<dyn Surface<f64, Rgb<f64>>>>>::new();
 
     polys.push(Poly::new(
         [[2.0, 1.0, -8.0], [0.0, 0.0, -10.0], [-1.0, 1.0, -9.0]],
-        Rgb([0.5, 0.02, 0.02]),
+        Matt::new(Rgb([0.5, 0.02, 0.02])),
     ));
     polys.push(Poly::new(
         [[1.0, 1.0, -12.0], [0.0, 3.0, -8.0], [-3.0, -3.0, -8.0]],
-        Rgb([0.02, 0.02, 0.5]),
+        Matt::new(Rgb([0.02, 0.02, 0.5])),
     ));
     polys.push(Poly::new(
         [[2.0, 0.0, -8.0], [2.0, 0.0, -15.0], [1.5, -3.0, -15.0]],
-        Rgb([0.02, 0.5, 0.02]),
+        Matt::new(Rgb([0.02, 0.5, 0.02])),
     ));
     polys.push(Poly::new(
         [[-2.0, -1.0, -2.0], [-1.0, 2.0, -12.0], [1.5, -2.0, -5.0]],
-        Rgb([0.4, 0.4, 0.02]),
+        Matt::new(Rgb([0.4, 0.4, 0.02])),
     ));
 
     // Floor.
@@ -158,16 +221,23 @@ fn main() {
             [50.0, -5.0, -50.0],
             [50.0, -5.0, 50.0],
         ],
-        Rgb([0.4, 0.4, 0.4]),
+        Matt::new(Rgb([0.4, 0.4, 0.4])),
         &mut polys,
     );
 
-    let scene = Scene {
-        polys: polys,
-        dark: Rgb([0.0, 0.0, 0.0]),
-        bright: Rgb([255.0, 255.0, 255.0]),
-        light: vecmath::vec3_normalized([1.0, 1.0, 1.0]),
-    };
+    // Sky.
+    shapes::add_quad(
+        [
+            [-50.0, 40.0, 50.0],
+            [-50.0, 40.0, -50.0],
+            [50.0, 40.0, -50.0],
+            [50.0, 40.0, 50.0],
+        ],
+        Light::new(Rgb([255.0, 255.0, 255.0])),
+        &mut polys,
+    );
+
+    let scene = Scene { polys: polys };
 
     let front = Camera {
         orig: [0.0, 0.0, 10.0],
@@ -243,9 +313,15 @@ fn main() {
     img.save("test.png").unwrap();
 }
 
-fn render<F: Float, C: Pixel<Subpixel = F>, I: GenericImage, G: Fn(C) -> I::Pixel>(
+fn render<
+    F: Float,
+    S: Surface<F, C>,
+    C: Pixel<Subpixel = F> + Black + PartialEq,
+    I: GenericImage,
+    G: Fn(C) -> I::Pixel,
+>(
     tracer: &Tracer<F>,
-    scene: &Scene<F, C>,
+    scene: &Scene<F, S>,
     camera: &Camera<F>,
     gamma: G,
     img: &mut I,
