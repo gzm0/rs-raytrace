@@ -3,6 +3,8 @@ extern crate quaternion;
 extern crate same;
 extern crate vecmath;
 
+mod geom;
+
 use image::{GenericImage, Pixel, Rgb, RgbImage};
 use vecmath::traits::Float;
 use vecmath::Vector3;
@@ -10,85 +12,8 @@ use vecmath::Vector3;
 use std::convert::TryInto;
 use std::option::Option;
 
+use geom::{Poly, Ray};
 use same::Same;
-
-struct Ray<T> {
-    orig: Vector3<T>,
-    dir: Vector3<T>,
-}
-
-struct Poly<T, C> {
-    points: [Vector3<T>; 3],
-    plane: Plane<T>,
-    color: C,
-}
-
-struct Plane<T> {
-    n: Vector3<T>,
-    d: T,
-}
-
-struct Hit<T> {
-    point: Vector3<T>,
-    dist: T,
-}
-
-impl<T: Float, C> Poly<T, C> {
-    fn new(points: [Vector3<T>; 3], color: C) -> Poly<T, C> {
-        let plane = {
-            // Surface normal.
-            let n = vecmath::vec3_normalized(vecmath::vec3_cross(
-                vecmath::vec3_sub(points[1], points[0]),
-                vecmath::vec3_sub(points[2], points[0]),
-            ));
-
-            // Surface to origin distance.
-            let d = vecmath::vec3_dot(n, points[0]);
-
-            Plane { n, d }
-        };
-
-        return Poly {
-            points,
-            plane,
-            color,
-        };
-    }
-
-    fn hit(&self, ray: &Ray<T>) -> Option<Hit<T>> {
-        let n = self.plane.n;
-
-        let dot = vecmath::vec3_dot(n, ray.dir);
-
-        if dot == T::zero() {
-            // Ray is parallel to plane.
-            return None;
-        }
-
-        // Distance of ray to hit point of the plane.
-        let d = (-vecmath::vec3_dot(n, ray.orig) + self.plane.d) / dot;
-
-        if d <= T::zero() {
-            // Plane is behind the ray.
-            return None;
-        }
-
-        // Hit point on the plane.
-        let p = vecmath::vec3_add(ray.orig, vecmath::vec3_scale(ray.dir, d));
-
-        for i in 0..3 {
-            let edge = vecmath::vec3_sub(self.points[(i + 1) % 3], self.points[i]);
-            let c = vecmath::vec3_sub(p, self.points[i]);
-
-            if vecmath::vec3_dot(n, vecmath::vec3_cross(edge, c)) < T::zero() {
-                // Point is on wrong side of edge.
-                return None;
-            }
-        }
-
-        return Some(Hit { point: p, dist: d });
-    }
-}
 
 struct Camera<T> {
     orig: Vector3<T>,
@@ -102,26 +27,6 @@ struct Scene<T, C> {
     dark: C,
     bright: C,
     light: Vector3<T>,
-}
-
-impl<T: Float, C> Scene<T, C> {
-    fn shoot(&self, ray: &Ray<T>, exclude: Option<&Poly<T, C>>) -> Option<(Hit<T>, &Poly<T, C>)> {
-        let mut closest: Option<(Hit<T>, &Poly<T, C>)> = None;
-
-        for p in &self.polys {
-            if exclude.map_or(false, |x| x.same(&p)) {
-                continue;
-            }
-
-            if let Some(h) = p.hit(ray) {
-                if closest.as_ref().map_or(true, |c| c.0.dist > h.dist) {
-                    closest = Some((h, &p));
-                }
-            }
-        }
-
-        return closest;
-    }
 }
 
 struct Tracer<T> {
@@ -165,7 +70,12 @@ impl<T: Float> Tracer<T> {
             return scene.dark;
         }
 
-        let (hit, poly) = match scene.shoot(ray, exclude) {
+        let polys: Box<dyn Iterator<Item = &Poly<T, C>>> = match exclude {
+            Some(that_poly) => Box::new(scene.polys.iter().filter(move |x| !that_poly.same(x))),
+            None => Box::new(scene.polys.iter()),
+        };
+
+        let (hit_point, poly) = match geom::shoot(polys, ray) {
             None => {
                 return if vecmath::vec3_dot(ray.dir, scene.light)
                     > T::from_f64(30.0).deg_to_rad().cos()
@@ -181,20 +91,20 @@ impl<T: Float> Tracer<T> {
         let mut all_light = scene.dark;
 
         for dir in self.all_dirs.iter() {
-            let v = vecmath::vec3_dot(*dir, poly.plane.n);
+            let v = vecmath::vec3_dot(*dir, *poly.n());
 
             if v == T::zero() {
                 // Perpendicular to surface.
                 continue;
             }
 
-            if vecmath::vec3_dot(ray.dir, poly.plane.n) / v > T::zero() {
+            if vecmath::vec3_dot(ray.dir, *poly.n()) / v > T::zero() {
                 // Rays are not on the same side of the surfce.
                 continue;
             }
 
             let r = Ray {
-                orig: hit.point,
+                orig: hit_point,
                 dir: *dir,
             };
 
