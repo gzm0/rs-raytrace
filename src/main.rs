@@ -118,7 +118,7 @@ impl<T: Float> Tracer<T> {
 
             let light = self
                 .trace(scene, &r, Some(poly), depth + 1)
-                .map2(&poly.color, |x, y| x * y);
+                .map2(&poly.surface, |x, y| x * y);
 
             all_light = all_light.map2(&light, |x, y| x + y * lambert);
         }

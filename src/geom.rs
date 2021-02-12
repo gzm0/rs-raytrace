@@ -9,10 +9,10 @@ pub struct Ray<T> {
     pub dir: Vector3<T>,
 }
 
-pub struct Poly<T, C> {
+pub struct Poly<T, S> {
     points: [Vector3<T>; 3],
     plane: Plane<T>,
-    pub color: C,
+    pub surface: S,
 }
 
 struct Plane<T> {
@@ -25,11 +25,11 @@ struct Hit<T> {
     dist: T,
 }
 
-pub fn shoot<'a, T: Float, C, I: Iterator<Item = &'a Poly<T, C>>>(
+pub fn shoot<'a, T: Float, S, I: Iterator<Item = &'a Poly<T, S>>>(
     polys: I,
     ray: &Ray<T>,
-) -> Option<(Vector3<T>, &'a Poly<T, C>)> {
-    let mut closest: Option<(Hit<T>, &Poly<T, C>)> = None;
+) -> Option<(Vector3<T>, &'a Poly<T, S>)> {
+    let mut closest: Option<(Hit<T>, &Poly<T, S>)> = None;
 
     for p in polys {
         if let Some(h) = p.hit(ray) {
@@ -42,8 +42,8 @@ pub fn shoot<'a, T: Float, C, I: Iterator<Item = &'a Poly<T, C>>>(
     return closest.map(|x| (x.0.point, x.1));
 }
 
-impl<T: Float, C> Poly<T, C> {
-    pub fn new(points: [Vector3<T>; 3], color: C) -> Poly<T, C> {
+impl<T: Float, S> Poly<T, S> {
+    pub fn new(points: [Vector3<T>; 3], surface: S) -> Poly<T, S> {
         let plane = {
             // Surface normal.
             let n = vecmath::vec3_normalized(vecmath::vec3_cross(
@@ -60,7 +60,7 @@ impl<T: Float, C> Poly<T, C> {
         return Poly {
             points,
             plane,
-            color,
+            surface,
         };
     }
 
