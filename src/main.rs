@@ -104,6 +104,26 @@ struct Scene<T, C> {
     light: Vector3<T>,
 }
 
+impl<T: Float, C> Scene<T, C> {
+    fn shoot(&self, ray: &Ray<T>, exclude: Option<&Poly<T, C>>) -> Option<(Hit<T>, &Poly<T, C>)> {
+        let mut closest: Option<(Hit<T>, &Poly<T, C>)> = None;
+
+        for p in &self.polys {
+            if exclude.map_or(false, |x| x.same(&p)) {
+                continue;
+            }
+
+            if let Some(h) = p.hit(ray) {
+                if closest.as_ref().map_or(true, |c| c.0.dist > h.dist) {
+                    closest = Some((h, &p));
+                }
+            }
+        }
+
+        return closest;
+    }
+}
+
 struct Tracer<T> {
     all_dirs: Vec<Vector3<T>>,
     max_depth: u32,
@@ -145,7 +165,7 @@ impl<T: Float> Tracer<T> {
             return scene.dark;
         }
 
-        let (hit, poly) = match shoot(scene, ray, exclude) {
+        let (hit, poly) = match scene.shoot(ray, exclude) {
             None => {
                 return if vecmath::vec3_dot(ray.dir, scene.light)
                     > T::from_f64(30.0).deg_to_rad().cos()
@@ -345,26 +365,4 @@ fn render<F: Float, C: Pixel<Subpixel = F>, I: GenericImage, G: Fn(C) -> I::Pixe
             img.put_pixel(x, y, gamma(light));
         }
     }
-}
-
-fn shoot<'a, F: Float, C: Copy>(
-    scene: &'a Scene<F, C>,
-    ray: &Ray<F>,
-    exclude: Option<&Poly<F, C>>,
-) -> Option<(Hit<F>, &'a Poly<F, C>)> {
-    let mut closest: Option<(Hit<F>, &Poly<F, C>)> = None;
-
-    for p in &scene.polys {
-        if exclude.map_or(false, |x| x.same(&p)) {
-            continue;
-        }
-
-        if let Some(h) = p.hit(ray) {
-            if closest.as_ref().map_or(true, |c| c.0.dist > h.dist) {
-                closest = Some((h, &p));
-            }
-        }
-    }
-
-    return closest;
 }
