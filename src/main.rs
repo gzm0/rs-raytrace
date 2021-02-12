@@ -5,6 +5,7 @@ extern crate vecmath;
 
 mod geom;
 mod shapes;
+mod surface;
 
 use image::{GenericImage, Pixel, Rgb, RgbImage};
 use vecmath::traits::Float;
@@ -16,86 +17,13 @@ use std::sync::Arc;
 
 use geom::{Poly, Ray};
 use same::Same;
-
-trait Black {
-    fn black() -> Self;
-}
-
-impl<T: image::Primitive> Black for Rgb<T> {
-    fn black() -> Rgb<T> {
-        return Rgb([T::zero(), T::zero(), T::zero()]);
-    }
-}
+use surface::{Black, Surface};
 
 struct Camera<T> {
     orig: Vector3<T>,
     dir: Vector3<T>,
     up: Vector3<T>,
     aperture: T, // aperture angle in radians
-}
-
-trait Surface<T, P> {
-    fn emitted(&self) -> P;
-    fn reflected(&self, n: Vector3<T>, i: Vector3<T>, o: Vector3<T>) -> P;
-}
-
-impl<T, P> Surface<T, P> for Arc<dyn Surface<T, P>> {
-    fn emitted(&self) -> P {
-        return (**self).emitted();
-    }
-    fn reflected(&self, n: Vector3<T>, i: Vector3<T>, o: Vector3<T>) -> P {
-        return (**self).reflected(n, i, o);
-    }
-}
-
-struct Matt<P> {
-    color: P,
-}
-
-impl<'a, P: 'a + Copy + Black> Matt<P> {
-    fn new<T: Float>(color: P) -> Arc<dyn 'a + Surface<T, P>> {
-        Arc::new(Matt { color })
-    }
-}
-
-impl<T: Float, P: Copy + Black> Surface<T, P> for Matt<P> {
-    fn emitted(&self) -> P {
-        return P::black();
-    }
-    fn reflected(&self, n: Vector3<T>, i: Vector3<T>, o: Vector3<T>) -> P {
-        let v = vecmath::vec3_dot(i, n);
-
-        if v == T::zero() {
-            // Perpendicular to surface.
-            return P::black();
-        }
-
-        if vecmath::vec3_dot(o, n) / v > T::zero() {
-            // Rays are not on the same side of the surfce.
-            return P::black();
-        }
-
-        return self.color;
-    }
-}
-
-struct Light<P> {
-    color: P,
-}
-
-impl<'a, P: 'a + Copy + Black> Light<P> {
-    fn new<T: Float>(color: P) -> Arc<dyn 'a + Surface<T, P>> {
-        Arc::new(Light { color })
-    }
-}
-
-impl<T: Float, P: Copy + Black> Surface<T, P> for Light<P> {
-    fn emitted(&self) -> P {
-        return self.color;
-    }
-    fn reflected(&self, _n: Vector3<T>, _i: Vector3<T>, _o: Vector3<T>) -> P {
-        return P::black();
-    }
 }
 
 struct Scene<T, S> {
@@ -198,19 +126,19 @@ fn main() {
 
     polys.push(Poly::new(
         [[2.0, 1.0, -8.0], [0.0, 0.0, -10.0], [-1.0, 1.0, -9.0]],
-        Matt::new(Rgb([0.5, 0.02, 0.02])),
+        surface::matt(Rgb([0.5, 0.02, 0.02])),
     ));
     polys.push(Poly::new(
         [[1.0, 1.0, -12.0], [0.0, 3.0, -8.0], [-3.0, -3.0, -8.0]],
-        Matt::new(Rgb([0.02, 0.02, 0.5])),
+        surface::matt(Rgb([0.02, 0.02, 0.5])),
     ));
     polys.push(Poly::new(
         [[2.0, 0.0, -8.0], [2.0, 0.0, -15.0], [1.5, -3.0, -15.0]],
-        Matt::new(Rgb([0.02, 0.5, 0.02])),
+        surface::matt(Rgb([0.02, 0.5, 0.02])),
     ));
     polys.push(Poly::new(
         [[-2.0, -1.0, -2.0], [-1.0, 2.0, -12.0], [1.5, -2.0, -5.0]],
-        Matt::new(Rgb([0.4, 0.4, 0.02])),
+        surface::matt(Rgb([0.4, 0.4, 0.02])),
     ));
 
     // Floor.
@@ -221,7 +149,7 @@ fn main() {
             [50.0, -5.0, -50.0],
             [50.0, -5.0, 50.0],
         ],
-        Matt::new(Rgb([0.4, 0.4, 0.4])),
+        surface::matt(Rgb([0.4, 0.4, 0.4])),
         &mut polys,
     );
 
@@ -233,7 +161,7 @@ fn main() {
             [50.0, 40.0, -50.0],
             [50.0, 40.0, 50.0],
         ],
-        Light::new(Rgb([255.0, 255.0, 255.0])),
+        surface::light(Rgb([255.0, 255.0, 255.0])),
         &mut polys,
     );
 
