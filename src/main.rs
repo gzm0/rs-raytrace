@@ -120,6 +120,122 @@ impl<T: Float> Tracer<T> {
 }
 
 fn main() {
+    draw_color_polys();
+    //draw_box();
+}
+
+fn draw_box() {
+    let mut img = RgbImage::new(500, 300);
+
+    let mut polys = Vec::<Poly<f64, Arc<dyn Surface<f64, Rgb<f64>>>>>::new();
+
+    let grey = surface::matt(Rgb([0.8, 0.8, 0.8]));
+
+    // Floor.
+    shapes::add_quad(
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, -10.0],
+            [10.0, 0.0, -10.0],
+            [10.0, 0.0, 0.0],
+        ],
+        grey.clone(),
+        &mut polys,
+    );
+
+    // Ceiling.
+    shapes::add_quad(
+        [
+            [0.0, 10.0, 0.0],
+            [0.0, 10.0, -10.0],
+            [10.0, 10.0, -10.0],
+            [10.0, 10.0, 0.0],
+        ],
+        grey.clone(),
+        &mut polys,
+    );
+
+    // Back.
+    shapes::add_quad(
+        [
+            [0.0, 0.0, -10.0],
+            [0.0, 10.0, -10.0],
+            [10.0, 10.0, -10.0],
+            [10.0, 0.0, -10.0],
+        ],
+        grey.clone(),
+        &mut polys,
+    );
+
+    // Front.
+    shapes::add_quad(
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 10.0, 0.0],
+            [10.0, 10.0, 0.0],
+            [10.0, 0.0, 0.0],
+        ],
+        grey.clone(),
+        &mut polys,
+    );
+
+    // Left.
+    shapes::add_quad(
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 10.0, 0.0],
+            [0.0, 10.0, -10.0],
+            [0.0, 0.0, -10.0],
+        ],
+        grey.clone(),
+        &mut polys,
+    );
+
+    // Right.
+    shapes::add_quad(
+        [
+            [10.0, 0.0, 0.0],
+            [10.0, 10.0, 0.0],
+            [10.0, 10.0, -10.0],
+            [10.0, 0.0, -10.0],
+        ],
+        grey.clone(),
+        &mut polys,
+    );
+
+    // Light.
+    shapes::add_quad(
+        [
+            [6.0, 9.8, -6.0],
+            [6.0, 9.8, -4.0],
+            [4.0, 9.8, -4.0],
+            [4.0, 9.8, -6.0],
+        ],
+        surface::light(Rgb([255.0, 255.0, 255.0])),
+        &mut polys,
+    );
+
+    let scene = Scene { polys: polys };
+
+    let cam = Camera {
+        orig: [5.0, 5.0, -0.2],
+        dir: [0.0, 0.0, -1.0],
+        up: [0.0, 1.0, 0.0],
+        aperture: 30.0 / 180.0 * std::f64::consts::PI, // deg
+    };
+
+    let tracer = Tracer::<f64>::new(6, 4);
+
+    let gamma = |c: Rgb<f64>| -> Rgb<u8> {
+        *Rgb::from_slice(&c.channels().iter().map(|x| (*x) as u8).collect::<Vec<u8>>())
+    };
+
+    render(&tracer, &scene, &cam, gamma, &mut img);
+
+    img.save("box.png").unwrap();
+}
+
+fn draw_color_polys() {
     let mut img = RgbImage::new(1001, 601);
 
     let mut polys = Vec::<Poly<f64, Arc<dyn Surface<f64, Rgb<f64>>>>>::new();
